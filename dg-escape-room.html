@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>The AI Launch Disaster — DG Escape Room</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:#020617;color:#f1f5f9;min-height:100vh}
+.card{background:#0f172a;border:1px solid rgba(255,255,255,.1);border-radius:20px;padding:20px}
+.btn{cursor:pointer;border:none;border-radius:12px;font-weight:600;padding:10px 18px;transition:.15s;display:inline-flex;align-items:center;gap:7px;font-size:14px;line-height:1;font-family:inherit}
+.btn-g{background:#10b981;color:#fff}.btn-g:hover{background:#059669}
+.btn-b{background:#3b82f6;color:#fff}.btn-b:hover{background:#2563eb}
+.btn-gh{background:rgba(255,255,255,.07);color:#94a3b8;border:1px solid rgba(255,255,255,.1)}.btn-gh:hover{background:rgba(255,255,255,.12)}
+.btn-w{background:#f8fafc;color:#0f172a}.btn-w:hover{background:#e2e8f0}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+input{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.15);border-radius:12px;color:#f1f5f9;font-size:15px;padding:10px 14px;width:100%;outline:none;transition:.2s;font-family:inherit}
+input:focus{border-color:rgba(16,185,129,.5)}
+input[type=number]{width:54px;text-align:center;padding:5px 6px;border-radius:8px;font-size:13px}
+.tag{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:500}
+.tag-r{background:rgba(244,63,94,.15);color:#fda4af}
+.tag-g{background:rgba(16,185,129,.15);color:#6ee7b7}
+.tag-a{background:rgba(245,158,11,.15);color:#fcd34d}
+.tag-gr{background:rgba(255,255,255,.08);color:#94a3b8}
+.sticky-hdr{position:sticky;top:0;z-index:10;background:rgba(2,6,23,.92);backdrop-filter:blur(8px);border-bottom:1px solid rgba(255,255,255,.1);padding:12px 20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+#root{min-height:100vh}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script type="text/babel">
+const {useState,useEffect,useMemo,useCallback,useRef}=React;
+const PASS="DGADMIN",KEY="novaretail_escape_v5",POLL=3000,MSECS=90*60;
+const DFLT={unlockedIdx:0,completed:[false,false,false,false,false,false],timerOn:false,timerTs:null,timerElapsed:0,scores:{},teams:[]};
+
+// Storage via localStorage with BroadcastChannel for same-device sync
+// and polling fallback for cross-device (same network) via shared key
+function loadG(){
+  try{const r=localStorage.getItem(KEY);return r?JSON.parse(r):{...DFLT};}
+  catch{return{...DFLT};}
+}
+function saveG(g){
+  try{localStorage.setItem(KEY,JSON.stringify(g));
+    try{new BroadcastChannel(KEY).postMessage('update');}catch{}
+    return true;}
+  catch{return false;}
+}
+
+const PHASES=[
+  {id:1,title:"Crisis 1 — The Data Chaos Discovery",stage:"Planning: Assessment & Scope",clr:"#f43f5e",time:"12–15 min",
+   obj:"Choose the right first governance scope and justify why it should be the pilot.",
+   scenario:"NovaRetail is scheduled to launch a $40M AI platform tomorrow morning. During final testing, the team discovers duplicate customer records, conflicting customer definitions across systems, unclassified PII in marketing datasets, and unclear lineage in the data lake.",
+   ev:["System inventory summary showing four core systems with conflicting issues","AI test report showing different customer counts by source","Email from Chief Data Scientist: model outputs change based on source system"],
+   tasks:["Identify the most urgent governance problem","Select the best initial DG scope","Explain why the scope is high-value, visible, and achievable","List 3 immediate next steps for assessment"],
+   del:"A 1-slide or 1-page pilot recommendation",
+   ans:["Best answers narrow the first scope to one domain rather than all enterprise data.","Strong teams choose customer master data, PII in marketing, or AI training data.","Good justification includes quick wins, executive visibility, and manageable change."]},
+  {id:2,title:"Crisis 2 — Executive Resistance",stage:"Planning: Engagement & Buy-In",clr:"#f59e0b",time:"10–12 min",
+   obj:"Secure executive support for the DG program.",
+   scenario:"The emergency governance recommendation reaches the executive team. Instead of support, the team faces resistance. The CFO says governance sounds expensive. The Marketing VP says governance will slow revenue. The CIO says the company already owns too many tools. The COO says this cannot delay launch.",
+   ev:["Email from CFO: 'Show me ROI or keep this minimal.'","Email from Marketing VP: 'This cannot delay campaigns.'","Slack from CIO: 'Please do not propose another platform unless necessary.'"],
+   tasks:["Build a 2-minute executive pitch","State the business value of DG in language executives care about","Anticipate resistance and respond to each executive concern","Identify the ideal DG champion"],
+   del:"A live 2-minute executive pitch plus one slide with talking points",
+   ans:["Strong teams speak in terms of risk reduction, AI trust, compliance, and reduced rework.","Best responses frame DG as an enabler, not bureaucracy.","Ideal champions are senior, credible, cross-functional, and willing to spend political capital."]},
+  {id:3,title:"Crisis 3 — The Governance Vacuum",stage:"Planning: Architecture & Framework",clr:"#3b82f6",time:"15 min",
+   obj:"Design the operating model needed to govern AI-critical data.",
+   scenario:"Executives agree that governance is necessary. They now ask a simple question: 'Who owns this data and what exactly will they do?' There is currently no formal DG structure, no stewardship model, no governance council, and no shared metadata standard.",
+   ev:["Blank governance org chart","Candidate roles: CMO, CIO, Compliance Director, Customer Analytics Lead, Data Engineer, Product Owner","Current process note: 'Data issues are handled ad hoc by whoever notices them first'"],
+   tasks:["Assign core roles: sponsor, data owner, data steward, governance council, IT/data management support","Create a mini-RACI for 4 tasks: rule definition, issue remediation, metadata documentation, policy escalation","Define the top 3 governance processes to implement first","Recommend the minimum technology capabilities needed"],
+   del:"A completed operating model worksheet",
+   ans:["Good teams distinguish business accountability from technical support.","Best answers define specific use-case-based processes, not vague governance statements.","Minimum tooling: metadata/glossary capabilities, issue tracking, and lineage documentation."]},
+  {id:4,title:"Crisis 4 — The Rollout Decision",stage:"Rollout: Initial Deployment",clr:"#10b981",time:"10–12 min",
+   obj:"Turn governance design into an actionable rollout plan.",
+   scenario:"The CEO approves the DG operating model, but wants to know exactly what happens in the first 90 days. Several business units are already asking to be included, and teams are worried the rollout will become too big and stall.",
+   ev:["Request list from four departments asking for DG support","Budget note limiting the first phase to a small team","Program office note asking for milestones and success criteria"],
+   tasks:["Select what goes into phase 1 and what is deferred","Create a 30-60-90 day rollout roadmap","Define 3 milestones and 3 immediate deliverables","Identify one change management action required in the first month"],
+   del:"A 30-60-90 day rollout plan",
+   ans:["Strong responses keep initial scope narrow and resist expanding too early.","Good milestones include role assignment, first governed dataset, or first training session completed.","Change management should be explicit rather than assumed."]},
+  {id:5,title:"Crisis 5 — Prove It Works",stage:"Monitoring",clr:"#8b5cf6",time:"12–15 min",
+   obj:"Define metrics that demonstrate DG performance and business value.",
+   scenario:"At the next board checkpoint, leaders ask: 'How will we know governance is working?' The board does not want generic statements. It wants measurable evidence that data quality, compliance, and AI reliability are improving.",
+   ev:["Board note requesting operational and business metrics","Risk memo highlighting PII exposure and inconsistent training data","Analytics note asking whether customer data used by AI is considered trusted"],
+   tasks:["Define 6 metrics across at least 3 categories","Include both operational metrics and business-facing metrics","Decide which metrics should be monitored weekly vs monthly","Name one threshold that would trigger escalation"],
+   del:"A DG metrics dashboard sketch",
+   ans:["Good categories: data quality, metadata/lineage, compliance/privacy, adoption, business outcomes.","Strong metrics avoid vanity measures and connect to actual governance capability.","Top teams include thresholds and ownership for action."]},
+  {id:6,title:"Crisis 6 — The Culture Backslide",stage:"Culture + Sustaining & Scaling",clr:"#64748b",time:"12–15 min",
+   obj:"Stabilize the governance program and prevent it from fading after launch.",
+   scenario:"Six months later, initial success is fading. Metadata updates are inconsistent. Data stewards are treating governance as side work. One executive champion has moved on. A new product team wants in, but the DG team is stretched thin.",
+   ev:["Adoption report: stewardship participation dropped from 92% to 54%","Metadata completeness trending downward over two reporting cycles","New business unit request asking for DG support"],
+   tasks:["Identify the core sustainability risks","Recommend 3 actions to reinforce governance behaviors","Explain how DG should scale without becoming chaotic","Decide what should be standardized centrally vs federated locally"],
+   del:"A sustain-and-scale action plan",
+   ans:["Strong answers include training, accountability, active executive sponsorship, and ongoing metrics.","Good teams understand that DG must become embedded rather than remain a side project.","Federation answers should balance enterprise standards with local realities."]}
+];
+
+const RUB=[
+  {k:"ProblemFraming",l:"Problem Framing"},
+  {k:"Practicality",l:"Practicality"},
+  {k:"Alignment",l:"DG Alignment"},
+  {k:"BusinessReasoning",l:"Business Reasoning"},
+  {k:"TeamPresentation",l:"Presentation"}
+];
+
+function getRem(g){
+  const e=(g.timerElapsed||0)+(g.timerOn&&g.timerTs?(Date.now()-g.timerTs)/1000:0);
+  return Math.max(0,MSECS-e);
+}
+function fmt(s){s=Math.floor(s);return`${String(Math.floor(s/60)).padStart(2,'0')}:${String(s%60).padStart(2,'0')}`;}
+
+function useTimer(g){
+  const[s,setS]=useState(()=>getRem(g));
+  const ref=useRef(g);ref.current=g;
+  useEffect(()=>{
+    setS(getRem(ref.current));
+    if(!g.timerOn)return;
+    const t=setInterval(()=>setS(getRem(ref.current)),1000);
+    return()=>clearInterval(t);
+  },[g.timerOn,g.timerTs,g.timerElapsed]);
+  return s;
+}
+
+function Login({onI,onS}){
+  const[mode,setMode]=useState(null);
+  const[pwd,setPwd]=useState('');
+  const[err,setErr]=useState(false);
+  const[team,setTeam]=useState('');
+  return(
+    <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:24,background:'radial-gradient(ellipse at 20% 50%,rgba(16,185,129,.08) 0%,transparent 60%),radial-gradient(ellipse at 80% 20%,rgba(239,68,68,.06) 0%,transparent 50%),#020617'}}>
+      <div style={{width:'100%',maxWidth:440}}>
+        <div style={{textAlign:'center',marginBottom:36}}>
+          <div className="tag tag-r" style={{marginBottom:16,display:'inline-flex'}}>⚠️ Emergency Briefing</div>
+          <h1 style={{fontSize:42,fontWeight:800,letterSpacing:'-1.5px',color:'#f1f5f9',lineHeight:1.15}}>The AI Launch<br/>Disaster</h1>
+          <p style={{color:'#475569',marginTop:10,fontSize:16}}>Data Governance Escape Room</p>
+        </div>
+        {!mode&&(
+          <div style={{display:'flex',flexDirection:'column',gap:12}}>
+            {[['student','👥','I\'m a Student','Join with your team name to play','rgba(16,185,129,.12)'],
+              ['instructor','🎓','I\'m an Instructor','Control the game and score teams','rgba(59,130,246,.12)']
+            ].map(([m,ic,t,sub,bg])=>(
+              <button key={m} onClick={()=>setMode(m)} style={{width:'100%',background:'rgba(255,255,255,.05)',border:'1px solid rgba(255,255,255,.1)',borderRadius:18,padding:'20px',cursor:'pointer',textAlign:'left',color:'#f1f5f9',transition:'.15s'}}>
+                <div style={{display:'flex',alignItems:'center',gap:16}}>
+                  <div style={{width:48,height:48,borderRadius:14,background:bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,flexShrink:0}}>{ic}</div>
+                  <div><div style={{fontWeight:700,fontSize:17}}>{t}</div><div style={{color:'#64748b',fontSize:13,marginTop:3}}>{sub}</div></div>
+                  <span style={{marginLeft:'auto',color:'#334155',fontSize:22}}>›</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+        {mode==='student'&&(
+          <div className="card">
+            <button onClick={()=>setMode(null)} style={{background:'none',border:'none',color:'#64748b',cursor:'pointer',fontSize:13,marginBottom:18,fontFamily:'inherit'}}>‹ Back</button>
+            <h2 style={{fontSize:19,fontWeight:700,marginBottom:8}}>Enter Your Team Name</h2>
+            <p style={{color:'#64748b',fontSize:13,marginBottom:16}}>Use the exact name your instructor assigned to your group.</p>
+            <input value={team} onChange={e=>setTeam(e.target.value)} placeholder="e.g. Team Alpha" onKeyDown={e=>e.key==='Enter'&&team.trim()&&onS(team.trim())}/>
+            <button disabled={!team.trim()} onClick={()=>onS(team.trim())} className="btn btn-g" style={{width:'100%',justifyContent:'center',marginTop:14,fontSize:15}}>Join Game →</button>
+          </div>
+        )}
+        {mode==='instructor'&&(
+          <div className="card">
+            <button onClick={()=>setMode(null)} style={{background:'none',border:'none',color:'#64748b',cursor:'pointer',fontSize:13,marginBottom:18,fontFamily:'inherit'}}>‹ Back</button>
+            <h2 style={{fontSize:19,fontWeight:700,marginBottom:8}}>Instructor Access</h2>
+            <p style={{color:'#64748b',fontSize:13,marginBottom:16}}>Default password: <strong style={{color:'#f1f5f9'}}>DGADMIN</strong></p>
+            <input type="password" value={pwd} onChange={e=>{setPwd(e.target.value);setErr(false);}} placeholder="Password" style={err?{borderColor:'#f43f5e'}:{}} onKeyDown={e=>e.key==='Enter'&&(pwd===PASS?onI():setErr(true))}/>
+            {err&&<p style={{color:'#f43f5e',fontSize:13,marginTop:8}}>Incorrect password. Try again.</p>}
+            <button onClick={()=>pwd===PASS?onI():setErr(true)} className="btn btn-b" style={{width:'100%',justifyContent:'center',marginTop:14,fontSize:15}}>Access Dashboard →</button>
+          </div>
+        )}
+        <p style={{textAlign:'center',color:'#1e293b',fontSize:12,marginTop:24}}>
+          💡 All students and the instructor should open this same HTML file in their browsers.<br/>
+          Game state syncs automatically on the same device. For multi-device use, see hosting instructions.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function CrisisCard({p,locked,showAns,onUnlockNext,isLastUnlocked,instructor}){
+  const[open,setOpen]=useState(false);
+  return(
+    <div className="card" style={{opacity:locked?.5:1,padding:0,overflow:'hidden',height:'fit-content'}}>
+      <div style={{background:`linear-gradient(135deg,${p.clr}cc,${p.clr}55)`,padding:'18px 22px',position:'relative'}}>
+        {locked&&<span className="tag tag-gr" style={{position:'absolute',top:12,right:12,fontSize:11}}>🔒 Locked</span>}
+        <div style={{fontSize:11,color:'rgba(255,255,255,.7)',fontWeight:600,marginBottom:4,textTransform:'uppercase',letterSpacing:.5}}>{p.stage} · {p.time}</div>
+        <div style={{fontSize:18,fontWeight:800,color:'#fff'}}>{p.title}</div>
+      </div>
+      <div style={{padding:'16px 22px'}}>
+        <div style={{marginBottom:12}}>
+          <div style={{fontSize:10,color:'#64748b',textTransform:'uppercase',letterSpacing:1,fontWeight:700,marginBottom:4}}>Objective</div>
+          <p style={{fontSize:13,color:'#cbd5e1',lineHeight:1.6}}>{p.obj}</p>
+        </div>
+        <button onClick={()=>setOpen(!open)} style={{background:'none',border:'none',color:'#3b82f6',fontSize:13,cursor:'pointer',padding:0,fontWeight:600,fontFamily:'inherit'}}>
+          {open?'▲ Hide details':'▼ Show scenario & tasks'}
+        </button>
+        {open&&(
+          <>
+            <div style={{marginTop:14}}>
+              <div style={{fontSize:10,color:'#64748b',textTransform:'uppercase',letterSpacing:1,fontWeight:700,marginBottom:6}}>Scenario</div>
+              <p style={{fontSize:13,color:'#94a3b8',lineHeight:1.7}}>{p.scenario}</p>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginTop:16}}>
+              <div>
+                <div style={{fontSize:10,color:'#64748b',textTransform:'uppercase',letterSpacing:1,fontWeight:700,marginBottom:8}}>Evidence Packet</div>
+                {p.ev.map((e,i)=><div key={i} style={{display:'flex',gap:6,fontSize:12,color:'#94a3b8',marginBottom:6,lineHeight:1.5}}><span style={{color:'#f59e0b',flexShrink:0}}>📄</span>{e}</div>)}
+              </div>
+              <div>
+                <div style={{fontSize:10,color:'#64748b',textTransform:'uppercase',letterSpacing:1,fontWeight:700,marginBottom:8}}>Your Tasks</div>
+                {p.tasks.map((t,i)=><div key={i} style={{display:'flex',gap:6,fontSize:12,color:'#94a3b8',marginBottom:6,lineHeight:1.5}}><span style={{color:'#10b981',fontWeight:700,flexShrink:0}}>{i+1}.</span>{t}</div>)}
+              </div>
+            </div>
+            <div style={{background:'rgba(255,255,255,.04)',border:'1px solid rgba(255,255,255,.07)',borderRadius:12,padding:14,marginTop:14}}>
+              <div style={{fontSize:10,color:'#64748b',textTransform:'uppercase',letterSpacing:1,fontWeight:700,marginBottom:5}}>Required Deliverable</div>
+              <div style={{fontSize:13,color:'#e2e8f0'}}>{p.del}</div>
+            </div>
+            {showAns&&(
+              <div style={{background:'rgba(16,185,129,.07)',border:'1px solid rgba(16,185,129,.2)',borderRadius:12,padding:14,marginTop:12}}>
+                <div style={{fontSize:10,color:'#6ee7b7',textTransform:'uppercase',letterSpacing:1,fontWeight:700,marginBottom:10}}>✅ Instructor Answer Guide</div>
+                {p.ans.map((a,i)=><div key={i} style={{display:'flex',gap:7,fontSize:12,color:'#a7f3d0',marginBottom:7,lineHeight:1.5}}><span style={{color:'#10b981',flexShrink:0}}>•</span>{a}</div>)}
+              </div>
+            )}
+            {instructor&&isLastUnlocked&&onUnlockNext&&(
+              <button onClick={onUnlockNext} className="btn btn-w" style={{marginTop:14,width:'100%',justifyContent:'center'}}>🔓 Unlock Next Crisis</button>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StudentView({game,team,onOut}){
+  const secs=useTimer(game);
+  const u=game.unlockedIdx??0;
+  const dn=(game.completed||[]).filter(Boolean).length;
+  const[vw,setVw]=useState(u);
+  useEffect(()=>setVw(u),[u]);
+  const urg=secs<600&&game.timerOn;
+  return(
+    <div style={{background:'#020617',minHeight:'100vh'}}>
+      <div className="sticky-hdr">
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          <div style={{width:34,height:34,borderRadius:10,background:'rgba(16,185,129,.15)',display:'flex',alignItems:'center',justifyContent:'center'}}>👥</div>
+          <div><div style={{fontWeight:700,fontSize:14}}>{team}</div><div style={{color:'#475569',fontSize:11}}>NovaRetail Task Force</div></div>
+        </div>
+        <div style={{margin:'0 auto',display:'flex',alignItems:'center',gap:10}}>
+          <span>⏱</span>
+          <span style={{fontFamily:'monospace',fontWeight:800,fontSize:28,color:urg?'#f43f5e':'#f1f5f9'}}>{fmt(secs)}</span>
+          <span className={`tag ${game.timerOn?'tag-g':'tag-gr'}`}>{game.timerOn?'Running':'Paused'}</span>
+        </div>
+        <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:14}}>
+          <span style={{fontSize:12,color:'#475569'}}>{dn}/{PHASES.length} complete</span>
+          <button onClick={onOut} className="btn btn-gh" style={{padding:'7px 14px',fontSize:12}}>🚪 Leave</button>
+        </div>
+      </div>
+      <div style={{height:3,background:'rgba(255,255,255,.05)'}}><div style={{height:'100%',background:'#10b981',width:`${(dn/PHASES.length)*100}%`,transition:'width .6s'}}/></div>
+      <div style={{maxWidth:860,margin:'0 auto',padding:'24px 20px'}}>
+        <div style={{display:'flex',gap:8,marginBottom:24,flexWrap:'wrap'}}>
+          {PHASES.map((p,i)=>{
+            const lk=i>u,done=game.completed?.[i],cur=i===u;
+            return(
+              <button key={i} disabled={lk} onClick={()=>setVw(i)} style={{padding:'7px 16px',borderRadius:999,border:'none',cursor:lk?'not-allowed':'pointer',fontSize:13,fontWeight:600,fontFamily:'inherit',background:vw===i?'#f1f5f9':done?'rgba(16,185,129,.2)':lk?'rgba(255,255,255,.03)':'rgba(255,255,255,.08)',color:vw===i?'#0f172a':done?'#6ee7b7':lk?'#1e293b':'#94a3b8',transition:'.15s'}}>
+                {lk?'🔒 ':cur&&!done?'● ':''}Crisis {i+1}
+              </button>
+            );
+          })}
+        </div>
+        {vw<=u
+          ?<CrisisCard p={PHASES[vw]} locked={false} showAns={false}/>
+          :<div className="card" style={{textAlign:'center',padding:60}}>
+            <div style={{fontSize:48,marginBottom:16}}>🔒</div>
+            <div style={{fontWeight:700,color:'#334155',fontSize:17}}>This crisis is locked</div>
+            <p style={{color:'#1e293b',marginTop:8,fontSize:13}}>Complete the current crisis — your instructor will unlock the next one.</p>
+          </div>
+        }
+      </div>
+    </div>
+  );
+}
+
+function InstructorView({game,onSave,onOut}){
+  const secs=useTimer(game);
+  const[tab,setTab]=useState('control');
+  const[showAns,setShowAns]=useState(false);
+  const[sc,setSc]=useState(game.scores||{});
+  useEffect(()=>setSc(game.scores||{}),[game.scores]);
+  const teams=game.teams||[];
+  const u=game.unlockedIdx??0;
+  const dn=(game.completed||[]).filter(Boolean).length;
+  const urg=secs<600&&game.timerOn;
+  const startT=()=>onSave({...game,timerOn:true,timerTs:Date.now()});
+  const pauseT=()=>{const e=(game.timerElapsed||0)+(game.timerTs?(Date.now()-game.timerTs)/1000:0);onSave({...game,timerOn:false,timerElapsed:e,timerTs:null});};
+  const resetT=()=>onSave({...game,timerOn:false,timerTs:null,timerElapsed:0});
+  const unlockNext=()=>onSave({...game,unlockedIdx:Math.min(u+1,PHASES.length-1),completed:(game.completed||[]).map((c,i)=>i===u?true:c)});
+  const unlockAt=i=>onSave({...game,unlockedIdx:i});
+  const resetAll=()=>{if(!confirm('Reset entire game? All progress, teams, and scores will be cleared.'))return;onSave({...DFLT});};
+  const updSc=(team,k,v)=>{const n=Math.max(0,Math.min(20,Number(v)||0));const ns={...sc,[team]:{...(sc[team]||{}),[k]:n}};setSc(ns);onSave({...game,scores:ns});};
+  const lb=useMemo(()=>teams.map(t=>({t,total:Object.values(sc[t]||{}).reduce((s,v)=>s+Number(v||0),0)})).sort((a,b)=>b.total-a.total),[teams,sc]);
+  return(
+    <div style={{background:'#020617',minHeight:'100vh'}}>
+      <div className="sticky-hdr">
+        <span style={{fontWeight:700,fontSize:15}}>⚠️ The AI Launch Disaster</span>
+        <span style={{color:'#334155',fontSize:13}}>— Instructor Dashboard</span>
+        <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:10}}>
+          <button onClick={()=>setShowAns(s=>!s)} className="btn" style={{padding:'7px 14px',fontSize:12,fontFamily:'inherit',background:showAns?'rgba(16,185,129,.15)':'rgba(255,255,255,.07)',border:`1px solid ${showAns?'rgba(16,185,129,.3)':'rgba(255,255,255,.1)'}`,color:showAns?'#6ee7b7':'#94a3b8'}}>{showAns?'✅ Answers On':'Show Answers'}</button>
+          <button onClick={onOut} className="btn btn-gh" style={{padding:'7px 14px',fontSize:12}}>🚪 Logout</button>
+        </div>
+      </div>
+      <div style={{borderBottom:'1px solid rgba(255,255,255,.08)',padding:'0 20px',display:'flex',gap:2,background:'#020617',overflowX:'auto'}}>
+        {[['control','⚙️ Control'],['crises','🚨 Crises'],['scoring','🏆 Scoring'],['playbook','🎓 Playbook']].map(([id,lbl])=>(
+          <button key={id} onClick={()=>setTab(id)} style={{padding:'12px 16px',background:'none',border:'none',cursor:'pointer',fontSize:13,fontWeight:600,fontFamily:'inherit',color:tab===id?'#f1f5f9':'#475569',borderBottom:`2px solid ${tab===id?'#10b981':'transparent'}`,marginBottom:-1,whiteSpace:'nowrap',transition:'.15s'}}>{lbl}</button>
+        ))}
+      </div>
+      <div style={{maxWidth:1100,margin:'0 auto',padding:'24px 20px',display:'flex',flexDirection:'column',gap:20}}>
+
+        {tab==='control'&&(<>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))',gap:16}}>
+            <div className="card">
+              <div style={{fontSize:11,color:'#64748b',fontWeight:700,marginBottom:14,textTransform:'uppercase',letterSpacing:1}}>⏱ Mission Timer</div>
+              <div style={{fontFamily:'monospace',fontWeight:800,fontSize:52,color:urg?'#f43f5e':'#f1f5f9',lineHeight:1}}>{fmt(secs)}</div>
+              <div style={{display:'flex',gap:8,marginTop:16}}>
+                {!game.timerOn
+                  ?<button onClick={startT} className="btn btn-g" style={{flex:1,justifyContent:'center',fontSize:15}}>▶ Start</button>
+                  :<button onClick={pauseT} className="btn" style={{flex:1,justifyContent:'center',fontSize:15,background:'rgba(245,158,11,.15)',color:'#fcd34d',border:'1px solid rgba(245,158,11,.3)'}}>⏸ Pause</button>}
+                <button onClick={resetT} className="btn btn-gh" style={{padding:'10px 16px',fontSize:16}}>↺</button>
+              </div>
+            </div>
+            <div className="card">
+              <div style={{fontSize:11,color:'#64748b',fontWeight:700,marginBottom:14,textTransform:'uppercase',letterSpacing:1}}>🚨 Crisis Progress</div>
+              <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                {PHASES.map((p,i)=>{const lk=i>u,done=game.completed?.[i],cur=i===u;return(
+                  <div key={i} style={{display:'flex',alignItems:'center',gap:10}}>
+                    <div style={{width:26,height:26,borderRadius:7,background:done?'rgba(16,185,129,.2)':cur?'rgba(245,158,11,.2)':'rgba(255,255,255,.05)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,color:done?'#6ee7b7':cur?'#fcd34d':'#334155',flexShrink:0}}>{i+1}</div>
+                    <div style={{fontSize:12,flex:1,color:lk?'#1e293b':cur?'#f1f5f9':'#475569'}}>Crisis {i+1}</div>
+                    {lk?<button onClick={()=>unlockAt(i)} style={{background:'none',border:'none',color:'#3b82f6',fontSize:11,cursor:'pointer',padding:0,fontWeight:600,fontFamily:'inherit'}}>unlock</button>:done?<span style={{color:'#10b981'}}>✓</span>:<span className="tag tag-a" style={{fontSize:10,padding:'2px 8px'}}>Active</span>}
+                  </div>
+                );})}
+              </div>
+              {u<PHASES.length-1&&<button onClick={unlockNext} className="btn btn-w" style={{width:'100%',justifyContent:'center',marginTop:14}}>🔓 Unlock Crisis {u+2}</button>}
+            </div>
+            <div className="card">
+              <div style={{fontSize:11,color:'#64748b',fontWeight:700,marginBottom:14,textTransform:'uppercase',letterSpacing:1}}>👥 Connected Teams ({teams.length})</div>
+              {teams.length===0
+                ?<div style={{textAlign:'center',padding:'20px 0',color:'#1e293b',fontSize:13}}><div style={{fontSize:32,marginBottom:8}}>👥</div>Students join by opening this file and entering a team name.</div>
+                :<div style={{display:'flex',flexDirection:'column',gap:7}}>
+                  {teams.map((t,i)=>(
+                    <div key={i} style={{display:'flex',alignItems:'center',gap:10,background:'rgba(255,255,255,.04)',borderRadius:12,padding:'9px 14px'}}>
+                      <div style={{width:30,height:30,borderRadius:8,background:'rgba(16,185,129,.15)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:'#6ee7b7',flexShrink:0}}>{t.charAt(0).toUpperCase()}</div>
+                      <span style={{fontSize:13,flex:1}}>{t}</span>
+                      <span style={{fontSize:12,color:'#6ee7b7',background:'rgba(16,185,129,.1)',padding:'3px 10px',borderRadius:999,fontWeight:600}}>{Object.values(sc[t]||{}).reduce((s,v)=>s+Number(v||0),0)} pts</span>
+                    </div>
+                  ))}
+                </div>
+              }
+              <button onClick={resetAll} style={{marginTop:14,width:'100%',background:'rgba(244,63,94,.08)',border:'1px solid rgba(244,63,94,.2)',borderRadius:12,padding:10,color:'#fda4af',fontSize:12,cursor:'pointer',fontWeight:600,fontFamily:'inherit'}}>🗑 Reset Entire Game</button>
+            </div>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:12}}>
+            {[['👥','Teams Playing',teams.length,'#10b981'],['🚨','Active Crisis',`#${u+1}`,'#f59e0b'],['✅','Crises Complete',`${dn}/6`,'#3b82f6'],['🏆','Max Score','100 pts','#8b5cf6']].map(([ic,l,v,c],i)=>(
+              <div key={i} className="card" style={{display:'flex',alignItems:'center',gap:14}}><span style={{fontSize:22}}>{ic}</span><div><div style={{fontSize:24,fontWeight:800,color:c}}>{v}</div><div style={{fontSize:11,color:'#475569',marginTop:2}}>{l}</div></div></div>
+            ))}
+          </div>
+        </>)}
+
+        {tab==='crises'&&(
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(400px,1fr))',gap:16}}>
+            {PHASES.map((p,i)=>(
+              <CrisisCard key={i} p={p} locked={i>u} showAns={showAns&&i<=u} instructor isLastUnlocked={i===u&&u<PHASES.length-1} onUnlockNext={unlockNext}/>
+            ))}
+          </div>
+        )}
+
+        {tab==='scoring'&&(
+          <div style={{display:'grid',gridTemplateColumns:'1.4fr .6fr',gap:18}}>
+            <div className="card">
+              <h2 style={{fontSize:17,fontWeight:700,marginBottom:18}}>Team Scores — Enter 0 to 20 per category</h2>
+              {teams.length===0
+                ?<div style={{textAlign:'center',padding:40,color:'#1e293b'}}><div style={{fontSize:36,marginBottom:10}}>🏆</div>No teams have joined yet.</div>
+                :<div style={{overflowX:'auto'}}>
+                  <table style={{width:'100%',fontSize:13,borderCollapse:'collapse',minWidth:500}}>
+                    <thead><tr style={{borderBottom:'1px solid rgba(255,255,255,.08)'}}>
+                      <th style={{padding:'8px 8px 12px 0',textAlign:'left',color:'#64748b',fontWeight:600}}>Team</th>
+                      {RUB.map(r=><th key={r.k} style={{padding:'8px 4px 12px',textAlign:'center',color:'#64748b',fontWeight:600,fontSize:11}}>{r.l}</th>)}
+                      <th style={{padding:'8px 0 12px 8px',textAlign:'right',color:'#64748b',fontWeight:600}}>Total</th>
+                    </tr></thead>
+                    <tbody>{teams.map(t=>{const s=sc[t]||{},tot=Object.values(s).reduce((x,v)=>x+Number(v||0),0);return(
+                      <tr key={t} style={{borderBottom:'1px solid rgba(255,255,255,.05)'}}>
+                        <td style={{padding:'10px 8px 10px 0',fontWeight:600,fontSize:14}}>{t}</td>
+                        {RUB.map(r=><td key={r.k} style={{padding:'8px 4px',textAlign:'center'}}><input type="number" min="0" max="20" value={s[r.k]??0} onChange={e=>updSc(t,r.k,e.target.value)}/></td>)}
+                        <td style={{padding:'10px 0 10px 8px',textAlign:'right',fontWeight:800,fontSize:20}}>{tot}</td>
+                      </tr>
+                    );})}</tbody>
+                  </table>
+                </div>
+              }
+            </div>
+            <div className="card" style={{background:'#060d1a'}}>
+              <div style={{fontSize:11,color:'#fcd34d',fontWeight:700,textTransform:'uppercase',letterSpacing:1,marginBottom:16}}>🏆 Live Leaderboard</div>
+              {lb.length===0
+                ?<p style={{color:'#1e293b',fontSize:13,textAlign:'center',padding:28}}>Teams appear after joining.</p>
+                :<div style={{display:'flex',flexDirection:'column',gap:10}}>
+                  {lb.map(({t,total},i)=>(
+                    <div key={t} style={{background:i===0?'rgba(245,158,11,.1)':'rgba(255,255,255,.04)',border:`1px solid ${i===0?'rgba(245,158,11,.25)':'rgba(255,255,255,.06)'}`,borderRadius:14,padding:'14px 16px',display:'flex',alignItems:'center',gap:12}}>
+                      <div style={{width:34,height:34,borderRadius:10,background:i===0?'#f59e0b':'rgba(255,255,255,.08)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:i===0?16:13,fontWeight:700,color:i===0?'#0f172a':'#475569',flexShrink:0}}>{i===0?'🥇':`#${i+1}`}</div>
+                      <div style={{flex:1}}><div style={{fontWeight:700,fontSize:15}}>{t}</div><div style={{fontSize:11,color:'#334155',marginTop:2}}>{i===0?'Currently leading':'In competition'}</div></div>
+                      <div style={{fontSize:28,fontWeight:800}}>{total}</div>
+                    </div>
+                  ))}
+                </div>
+              }
+              <div style={{marginTop:18,paddingTop:16,borderTop:'1px solid rgba(255,255,255,.08)'}}>
+                <div style={{fontSize:10,color:'#334155',fontWeight:700,textTransform:'uppercase',letterSpacing:1,marginBottom:10}}>Rubric (20 pts each)</div>
+                {RUB.map(r=><div key={r.k} style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:5}}><span style={{color:'#475569'}}>{r.l}</span><span style={{color:'#334155'}}>20 pts</span></div>)}
+                <div style={{borderTop:'1px solid rgba(255,255,255,.06)',marginTop:8,paddingTop:8,display:'flex',justifyContent:'space-between',fontWeight:700,fontSize:13}}><span>Total</span><span>100 pts</span></div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {tab==='playbook'&&(<>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+            <div className="card">
+              <h3 style={{fontWeight:700,marginBottom:14,fontSize:15}}>Learning Objectives</h3>
+              {["Diagnose what can go wrong during a DG implementation.","Apply DG lifecycle thinking to an urgent enterprise problem.","Balance scope, ownership, controls, metrics, and change management.","Connect governance to AI trust, privacy, and executive decision-making."].map((o,i)=><div key={i} style={{display:'flex',gap:8,fontSize:13,color:'#94a3b8',marginBottom:8,lineHeight:1.5}}><span style={{color:'#10b981',flexShrink:0}}>✓</span>{o}</div>)}
+            </div>
+            <div className="card">
+              <h3 style={{fontWeight:700,marginBottom:14,fontSize:15}}>How to Run It</h3>
+              {["Everyone opens the same HTML file — students click 'I'm a Student', you click 'I'm an Instructor'.","Read the opening story dramatically before starting the timer.","Use Game Control to start the timer and unlock crises one by one.","Enter team scores in the Scoring tab at the end of each crisis."].map((o,i)=><div key={i} style={{display:'flex',gap:8,fontSize:13,color:'#94a3b8',marginBottom:8,lineHeight:1.5}}><span style={{color:'#3b82f6',fontWeight:700,flexShrink:0}}>{i+1}.</span>{o}</div>)}
+            </div>
+          </div>
+          <div className="card">
+            <h3 style={{fontWeight:700,marginBottom:16,fontSize:15}}>Run of Show</h3>
+            <table style={{width:'100%',fontSize:13,borderCollapse:'collapse'}}>
+              <thead><tr style={{borderBottom:'1px solid rgba(255,255,255,.08)'}}>{['Time','Activity','Instructor Note'].map(h=><th key={h} style={{padding:'6px 10px 12px',textAlign:'left',color:'#64748b',fontWeight:600}}>{h}</th>)}</tr></thead>
+              <tbody>{[['5 min','Open the scenario','Read dramatically — create urgency from the start'],['12–15 min','Crisis 1','Force them to keep the scope small; reject "all enterprise data"'],['10–12 min','Crisis 2','Push executive resistance hard — act out the CFO role if needed'],['15 min','Crisis 3','Require clear role distinctions, not vague ownership statements'],['10–12 min','Crisis 4','Challenge overly broad rollout plans; demand specific milestones'],['12–15 min','Crisis 5','Reject vanity metrics — ask "what action does this trigger?"'],['12–15 min','Crisis 6','Ask how governance survives when the champion leaves'],['5–10 min','Debrief','Map their decisions back to your DG lecture framework']].map((r,i)=>(
+                <tr key={i} style={{borderBottom:'1px solid rgba(255,255,255,.04)'}}>{r.map((c,j)=><td key={j} style={{padding:'9px 10px',color:j===0?'#64748b':j===1?'#f1f5f9':'#475569',lineHeight:1.4}}>{c}</td>)}</tr>
+              ))}</tbody>
+            </table>
+          </div>
+          <div style={{background:'#060d1a',border:'1px solid rgba(255,255,255,.07)',borderRadius:20,padding:24}}>
+            <div style={{fontSize:10,color:'#6ee7b7',fontWeight:700,textTransform:'uppercase',letterSpacing:1,marginBottom:12}}>📢 Opening Story Script — Read This Aloud</div>
+            <p style={{fontSize:14,color:'#cbd5e1',lineHeight:1.8,marginBottom:12}}>"It is 7:00 PM. NovaRetail is scheduled to launch a $40 million AI platform tomorrow morning. The platform is supposed to personalize customer experiences, optimize marketing campaigns, and improve retention. But during final testing, everything started to break. Different systems returned different customer counts. Sensitive customer information was found in analytics datasets without proper classification. The AI team cannot explain where key training data came from or who owns it."</p>
+            <p style={{fontSize:14,color:'#cbd5e1',lineHeight:1.8}}>"The CEO has frozen the launch. You are now the Emergency Data Governance Task Force. Your mission is to design a credible governance implementation before the board reconvenes. You have 90 minutes. <strong style={{color:'#f1f5f9'}}>Begin.</strong>"</p>
+          </div>
+        </>)}
+      </div>
+    </div>
+  );
+}
+
+function App(){
+  const[role,setRole]=useState(null);
+  const[team,setTeam]=useState('');
+  const[game,setGame]=useState(()=>loadG());
+  const load=useCallback(()=>{const g=loadG();setGame(g);return g;},[]);
+  const save=useCallback(g=>{saveG(g);setGame(g);},[]);
+
+  useEffect(()=>{
+    const t=setInterval(load,POLL);
+    let bc;
+    try{bc=new BroadcastChannel(KEY);bc.onmessage=()=>load();}catch{}
+    return()=>{clearInterval(t);try{bc&&bc.close();}catch{}}
+  },[load]);
+
+  const join=name=>{
+    const g=loadG();const ts=g.teams||[];
+    const ng=ts.includes(name)?g:{...g,teams:[...ts,name],scores:{...g.scores,[name]:g.scores?.[name]||{ProblemFraming:0,Practicality:0,Alignment:0,BusinessReasoning:0,TeamPresentation:0}}};
+    save(ng);setTeam(name);setRole('student');
+  };
+
+  if(!role)return <Login onI={()=>setRole('instructor')} onS={join}/>;
+  if(role==='student')return <StudentView game={game} team={team} onOut={()=>setRole(null)}/>;
+  return <InstructorView game={game} onSave={save} onOut={()=>setRole(null)}/>;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
